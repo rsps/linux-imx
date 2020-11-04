@@ -59,3 +59,6 @@ obj-y				+= cardreader/
 obj-$(CONFIG_PVPANIC)   	+= pvpanic.o
 obj-$(CONFIG_HABANA_AI)		+= habanalabs/
 obj-$(CONFIG_XILINX_SDFEC)	+= xilinx_sdfec.o
+obj-$(CONFIG_RSPS_P05V2) 	+= p05_platform.o
+obj-$(CONFIG_WASATCH_CUSTOM_FPGA)       += wasatch.o
+

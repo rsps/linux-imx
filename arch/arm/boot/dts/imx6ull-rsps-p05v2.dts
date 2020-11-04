@@ -1,0 +1,366 @@
+/**
+ * Device tree for RSP Systems Glucobeam hardware Prototype 0.5 ver. 2
+ *
+ */
+
+/dts-v1/;
+
+#include "imx6ull.dtsi"
+
+#include "imx6ull-var-dart.dtsi"
+#include "imx6ul-imx6ull-var-dart-emmc.dtsi"
+#include "imx6ul-imx6ull-var-dart-wifi.dtsi"
+
+#include "imx6ull-var-dart-6ulcustomboard.dtsi"
+
+
+/ {
+	model = "RSP Systems P05v2 with Variscite i.MX6 UltraLite DART EMMC/WIFI";
+
+	p05v2 {
+		compatible = "rsps,p05v2", "rsps,glucobeam", "fsl,imx6ull-var-dart", "fsl,imx6ull";
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_imp &pinctrl_cap_sen &pinctrl_laser &pinctrl_spectrometer &pinctrl_power &pinctrl_audio>;
+
+		status = "okay";
+
+		power5v-gpios = <&gpio4 20 GPIO_ACTIVE_HIGH>;
+		aux_power-gpios = <&gpio1 1 GPIO_ACTIVE_HIGH>;
+		display_power-gpios = <&gpio4 19 GPIO_ACTIVE_HIGH>;
+
+		impedance_ok-gpios = <&gpio2 5 GPIO_ACTIVE_HIGH>;
+		impedance_adc-gpios = <&gpio1 6 GPIO_ACTIVE_HIGH>;
+
+		proximity_ok-gpios = <&gpio1 5 GPIO_ACTIVE_HIGH>;
+
+		_hall_closed-gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
+
+		laser_board_pwr-gpios = <&gpio1 25 GPIO_ACTIVE_HIGH>;
+		laser_on-gpios = <&gpio1 0 GPIO_ACTIVE_HIGH>;
+
+		laser_tec_en-gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
+		laser_tec_ut-gpios = <&gpio4 15 GPIO_ACTIVE_LOW>;
+		laser_tec_ot-gpios = <&gpio4 11 GPIO_ACTIVE_LOW>;
+		laser_shutdown-gpios = <&gpio2 6 GPIO_ACTIVE_HIGH>;
+
+		ccd_tec_en-gpios = <&gpio1 19 GPIO_ACTIVE_HIGH>;
+		ccd_tec_ut-gpios = <&gpio4 12 GPIO_ACTIVE_LOW>;
+		ccd_tec_ot-gpios = <&gpio1 4 GPIO_ACTIVE_LOW>;
+		
+		audio_output_en-gpios = <&gpio1 8 GPIO_ACTIVE_HIGH>;
+
+		/* som_fpga_io-gpios =  <&gpio1 18 GPIO_ACTIVE_HIGH>; */
+	};
+
+	jtag {
+		compatible = "gpio-jtag";
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_jtag>;
+		status = "okay";
+	};
+	
+};
+
+&adc1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_imp_adc>;
+	vref-supply = <&touch_3v3_regulator>;
+	num-channels = <1>;
+	status = "okay";
+};
+
+&i2c1 {
+	clock-frequency = <100000>;
+	pinctrl-names = "default", "gpio";
+	pinctrl-0 = <&pinctrl_i2c1>;
+	pinctrl-1 = <&pinctrl_i2c1>;
+	status = "okay";
+	scl-gpios = <&gpio1 28 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpio1 29 GPIO_ACTIVE_HIGH>;
+
+	dac_ccd_temp: ltc2606@10 {
+		compatible = "ltc,ltc2606";
+		reg = <0x10>;
+	};
+
+	power_temp: tmp100@40 {
+		compatible = "si7020";
+		reg = <0x40>;
+	};
+
+	power_gauge: ltc4015@68 {
+		compatible = "ltc,ltc4015";
+		reg = <0x68>;
+		ltc,r_sense = <13>;
+		ltc,capacity = <2500>;
+		ltc,r_bias = <10000>;
+	};
+};
+
+&i2c2 {
+	pinctrl-names = "default", "gpio";
+	pinctrl-0 = <&pinctrl_i2c2>;
+	pinctrl-1 = <&pinctrl_i2c2>;
+	scl-gpios = <&gpio1 30 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpio1 31 GPIO_ACTIVE_HIGH>;
+};
+
+&i2c4 {
+	clock_frequency = <100000>;
+	pinctrl-names = "default", "gpio";
+	pinctrl-0 = <&pinctrl_i2c4>;
+	pinctrl-1 = <&pinctrl_i2c4>;
+	status = "okay";
+	scl-gpios = <&gpio2 10 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpio2 11 GPIO_ACTIVE_HIGH>;
+
+	dac_temp: ltc2606@10 {
+		compatible = "ltc,ltc2606";
+		reg = <0x10>;
+	};
+
+	dac_power: ltc2606@31 {
+		compatible = "ltc,ltc2606";
+		reg = <0x31>;
+	};
+
+	adc_laser: ltc2493@14 {
+		compatible = "ltc,ltc2493";
+		reg = <0x14>;
+	};
+
+	eeprom_calib: at24c256c@51 {
+		compatible = "24c256";
+		reg = <0x51>;
+		pagesize = <64>;
+	};
+
+	laser_temp: tmp100@48 {
+		compatible = "tmp100";
+		reg = <0x48>;
+	};
+
+	goodix_ts@5d {
+		compatible = "goodix,gt911";
+		reg = <0x5d>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_touch>;
+		interrupt-parent = <&gpio1>;
+		interrupts = <2 0>;
+		touchscreen-size-x = <800>;
+		touchscreen-size-y = <480>;
+		irq-gpios = <&gpio1 2 0>;
+		reset-gpios = <&gpio5 9 1>;
+	};
+
+	digpot_lasermeaslim@23 {
+		compatible = "adi,ad5141-100";
+		reg = <0x23>;
+		status = "okay";
+	};
+
+	digpot_lasersetlim@20 {
+		compatible = "adi,ad5141-100";
+		reg = <0x20>;
+		status = "okay";
+	};
+	
+	rtc@68 {
+		compatible = "m41t62";
+		reg = <0x68>;
+		status = "okay";
+	};
+};
+
+/*
+&wdog1 {
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
+	/delete-property/ fsl,ext-reset-output;
+};
+*/
+
+&ecspi2 {
+	fsl,spi-num-chipselects = <1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_spi2>;
+
+	status = "okay";
+
+	wasatch@0 {
+        compatible = "wasatch";
+        spi-max-frequency = <23255813>;
+        reg = <0>;
+        interrupt-parent = <&gpio1>;
+        interrupts = <18 IRQ_TYPE_EDGE_RISING>;
+    };
+};
+
+&ecspi4 {
+	fsl,spi-num-chipselects = <1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_spi4 &pinctrl_display>;
+	status = "okay";
+
+	display@0 {
+        compatible = "etml0400";
+        spi-max-frequency = <6000000>;
+        reg = <0>;
+    };
+
+};
+
+&iomuxc {
+	imx6ul-evk {
+
+/*
+CONFIG bits definition:
+PAD_CTL_HYS						(1 << 16) 0x10000 *
+PAD_CTL_PUS_100K_DOWN			(0 << 14) 0x00000 *
+PAD_CTL_PUS_47K_UP				(1 << 14) 0x04000
+PAD_CTL_PUS_100K_UP				(2 << 14) 0x08000
+PAD_CTL_PUS_22K_UP				(3 << 14) 0x0c000
+PAD_CTL_PUE						(1 << 13) 0x02000  Pull Keeper select field: 1 = PUS resistors, 0 = Keeper
+PAD_CTL_PKE						(1 << 12) 0x01000  1 = Pull/Keeper enabled
+PAD_CTL_ODE						(1 << 11) 0x00800  1 = Open Drain Enabled
+PAD_CTL_SPEED_LOW				(0 << 6)  0x00000
+PAD_CTL_SPEED_MED				(1 << 6)  0x00040
+PAD_CTL_SPEED_MED				(2 << 6)  0x00080 *
+PAD_CTL_SPEED_HIGH				(3 << 6)  0x000c0
+PAD_CTL_DSE_DISABLE				(0 << 3)  0x00000
+PAD_CTL_DSE_240ohm				(1 << 3)  0x00008
+PAD_CTL_DSE_120ohm				(2 << 3)  0x00010
+PAD_CTL_DSE_80ohm				(3 << 3)  0x00018
+PAD_CTL_DSE_60ohm				(4 << 3)  0x00020
+PAD_CTL_DSE_48ohm				(5 << 3)  0x00028
+PAD_CTL_DSE_40ohm				(6 << 3)  0x00030 *
+PAD_CTL_DSE_34ohm				(7 << 3)  0x00038
+PAD_CTL_SRE_FAST				(1 << 0)  0x00001 *
+PAD_CTL_SRE_SLOW				(0 << 0)  0x00000
+
+Eg. MX6UL_PAD_GPIO1_IO00__GPIO1_IO00	  0x17059 // User Button
+*/
+
+		pinctrl_spi2: ecspi2grp {
+			fsl,pins = <
+				MX6UL_PAD_CSI_DATA02__ECSPI2_MOSI	0x100b1
+				MX6UL_PAD_CSI_DATA03__ECSPI2_MISO	0x100b1
+				MX6UL_PAD_CSI_DATA01__ECSPI2_SS0	0x100b1
+				MX6UL_PAD_CSI_DATA00__ECSPI2_SCLK	0x100b1
+			>;
+		};
+
+		pinctrl_spi4: ecspi4grp {
+			fsl,pins = <
+				MX6UL_PAD_ENET2_RX_ER__ECSPI4_SS0		0x100b1
+				MX6UL_PAD_ENET2_TX_DATA1__ECSPI4_SCLK	0x100b1
+				MX6UL_PAD_ENET2_TX_EN__ECSPI4_MOSI		0x100b1
+				MX6UL_PAD_ENET2_TX_CLK__ECSPI4_MISO		0x100b1
+			>;
+		};
+
+		pinctrl_display: pinctrl_reset {
+			fsl,pins = <
+				MX6UL_PAD_LCD_RESET__GPIO3_IO04			0xb008
+			>;
+		};
+
+		pinctrl_imp: skin_imp_ok {
+			fsl,pins = <
+				MX6UL_PAD_ENET1_TX_EN__GPIO2_IO05   0x10000 /* IMP_OK (HYS) */
+			>;
+		};
+		pinctrl_imp_adc: skin_imp_value {
+			fsl,pins = <
+				MX6UL_PAD_GPIO1_IO06__GPIO1_IO06	0x0 /* SKIN_IMP (ADC1_IN6) */
+			>;
+		};
+
+
+		pinctrl_cap_sen: cap_handling {
+			fsl,pins = <
+				MX6UL_PAD_GPIO1_IO05__GPIO1_IO05	0x13000 /* PROX_OK_BUFF (HYS, 100K pull down) */
+			>;
+		};
+
+		pinctrl_laser: laser_handling {
+			fsl,pins = <
+				MX6UL_PAD_JTAG_MOD__GPIO1_IO10		0x88	/* LASER_TEC_EN (Medium speed, 240 ohm drive strength) */
+				MX6UL_PAD_UART3_RX_DATA__GPIO1_IO25	0x88	/* LASER_BRD_PWR_ON (Medium speed, 240 ohm drive strength) */
+				MX6UL_PAD_GPIO1_IO00__GPIO1_IO00	0x88	/* LASER_ON (Medium speed, 240 ohm drive strength) */
+				MX6UL_PAD_NAND_CLE__GPIO4_IO15		0x1b080 /* _LASER_TEC_UT (HYS, 100K pull up, Medium speed) */
+				MX6UL_PAD_NAND_WP_B__GPIO4_IO11		0x1b080 /* _LASER_TEC_OT (HYS, 100K pull up, Medium speed) */
+				MX6UL_PAD_GPIO1_IO09__GPIO1_IO09	0x10000 /* _HALL_BUF (HYS) */
+				MX6UL_PAD_ENET1_TX_CLK__GPIO2_IO06	0x10000 /* _LASER_SD_BUFF (HYS) */
+			>;
+		};
+
+		pinctrl_spectrometer: spectrometer_handling {
+			fsl,pins = <
+/*				MX6UL_PAD_UART1_CTS_B__GPIO1_IO18	0x10000 /* SOM_FPGA_IO Already used as interrupt for wasatch driver. */
+				MX6UL_PAD_GPIO1_IO04__GPIO1_IO04	0x10000 /* _CCD_TEC_OT (HYS) */
+				MX6UL_PAD_NAND_READY_B__GPIO4_IO12	0x10000 /* _CCD_TEC_UT (HYS) */
+/*				MX6UL_PAD_SNVS_TAMPER3__GPIO5_IO03	0x88	/* OSC_32K_IN ??? */
+				MX6UL_PAD_UART1_RTS_B__GPIO1_IO19	0x88    /* CCD_TEC_EN (Medium speed, 240 ohm drive strength) */
+			>;
+		};
+
+		pinctrl_touch: touch_handling {
+			fsl,pins = <
+				MX6UL_PAD_SNVS_TAMPER9__GPIO5_IO09	0x880   /* _CAP_RST (Open drain, Medium speed) */
+				MX6UL_PAD_GPIO1_IO02__GPIO1_IO02	0x1b000 /* CAP_INT (HYS, 100K pull up)*/
+			>;
+		};
+
+		pinctrl_leds: indicators {
+			fsl,pins = <
+				MX6UL_PAD_UART3_CTS_B__GPIO1_IO26		0x8 /* LED_R */
+				MX6UL_PAD_CSI_MCLK__GPIO4_IO17			0x8 /* LED_G */
+				MX6UL_PAD_ENET2_RX_DATA0__GPIO2_IO08	0x8 /* LED_BUTTON_R */
+				MX6UL_PAD_ENET2_RX_DATA1__GPIO2_IO09	0x8 /* LED_BUTTON_G */
+				MX6UL_PAD_NAND_CE1_B__GPIO4_IO14		0x8 /* LED_BUTTON_B */
+			>;
+		};
+
+		pinctrl_jtag: jtag {
+			fsl,pins = <
+				/* pinControl for JTAG for FPGA programming */
+				MX6UL_PAD_ENET1_RX_EN__GPIO2_IO02	  0x08 /* TMS_SOM */
+				MX6UL_PAD_ENET1_RX_ER__GPIO2_IO07	  0x08 /* TDO_SOM */
+				MX6UL_PAD_ENET1_TX_DATA0__GPIO2_IO03   0x08 /* TCK_SOM */
+				MX6UL_PAD_ENET1_TX_DATA1__GPIO2_IO04   0x08 /* TDI_SOM */
+			>;
+		};
+
+		pinctrl_power: power {
+			fsl,pins = <
+				MX6UL_PAD_CSI_HSYNC__GPIO4_IO20				0xF008 /* 5V_ENABLE (22K pull up, 240 ohm drive strength, Slow SR) */
+				MX6UL_PAD_GPIO1_IO01__GPIO1_IO01			0x0008 /* AUX_PWR_EN (240 ohm drive strength, Slow SR) */
+				MX6UL_PAD_CSI_VSYNC__GPIO4_IO19				0x0008 /* 3V3_DISPLAY_EN (240 ohm drive strength, Slow SR) */
+			>;
+		};
+
+		pinctrl_charger: charger {
+			fsl,pins = <
+				MX6UL_PAD_ENET1_RX_DATA0__GPIO2_IO00	 0x1b000 /* _SMBALERT (HYS, 100K pull up) */
+			>;
+		};
+
+		pinctrl_audio: audio {
+			fsl,pins = <
+				MX6UL_PAD_GPIO1_IO08__GPIO1_IO08	0x88 /* SPEAKER_ENABLE (Medium speed, 240 ohm drive strength) */
+			>;
+		};
+	};
+};
+
+&sai1 {
+	assigned-clocks = <&clks IMX6UL_CLK_SAI1_SEL>,
+			<&clks IMX6UL_CLK_SAI1>;
+	assigned-clock-parents = <&clks IMX6UL_CLK_PLL4_AUDIO_DIV>;
+	assigned-clock-rates = <0>, <24576000>;
+	status = "disabled";
+};
+
+
+
