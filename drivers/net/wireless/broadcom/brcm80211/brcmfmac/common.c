@@ -553,7 +553,7 @@ static int __init brcmf_common_pd_probe(struct platform_device *pdev)
 		return 0;
 
 	brcmfmac_pdata->dev = &pdev->dev;
-	if (brcmfmac_pdata->power_on)
+	if (brcmfmac_pdata && brcmfmac_pdata->power_on)
 		brcmfmac_pdata->power_on();
 
 	return 0;
