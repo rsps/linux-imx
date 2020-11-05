@@ -27,6 +27,8 @@
 #include <linux/slab.h>
 #include <linux/acpi.h>
 #include <linux/of.h>
+#include <linux/device.h> 
+#include <linux/workqueue.h>
 #include <asm/unaligned.h>
 
 struct goodix_ts_data;
@@ -40,6 +42,7 @@ struct goodix_chip_data {
 struct goodix_ts_data {
 	struct i2c_client *client;
 	struct input_dev *input_dev;
+	struct delayed_work work; 
 	const struct goodix_chip_data *chip;
 	struct touchscreen_properties prop;
 	unsigned int max_touch_num;
@@ -55,6 +58,9 @@ struct goodix_ts_data {
 	unsigned long irq_flags;
 	unsigned int contact_size;
 };
+
+#define GOODIX_WORKQUEUE_NAME "goodix_workqueue"
+#define GOODIX_WORK_DELAY_S 20 /* In Jiffies... 20 * 10 msec */
 
 #define GOODIX_GPIO_INT_NAME		"irq"
 #define GOODIX_GPIO_RST_NAME		"reset"
@@ -121,6 +127,15 @@ static const unsigned long goodix_irq_flags[] = {
 	IRQ_TYPE_LEVEL_LOW,
 	IRQ_TYPE_LEVEL_HIGH,
 };
+
+static int last_power_state = 1;
+static int inhibit_irq = 0;
+static int irq_allocated = 0;
+static struct workqueue_struct *goodix_workqueue;
+static int re_init_err = 0;
+
+extern int p05_aux_power_state(void);
+
 
 /*
  * Those tablets have their coordinates origin at the bottom right
@@ -385,22 +400,34 @@ static void goodix_process_events(struct goodix_ts_data *ts)
 static irqreturn_t goodix_ts_irq_handler(int irq, void *dev_id)
 {
 	struct goodix_ts_data *ts = dev_id;
+	if (p05_aux_power_state() && !inhibit_irq) {
+		goodix_process_events(ts);
 
-	goodix_process_events(ts);
-
-	if (goodix_i2c_write_u8(ts->client, GOODIX_READ_COOR_ADDR, 0) < 0)
-		dev_err(&ts->client->dev, "I2C write end_cmd error\n");
+		if (goodix_i2c_write_u8(ts->client, GOODIX_READ_COOR_ADDR, 0) < 0){
+			dev_err(&ts->client->dev, "I2C write end_cmd error\n");
+		}
+	}
+	else {
+		inhibit_irq = 1;
+	}
 
 	return IRQ_HANDLED;
 }
 
 static void goodix_free_irq(struct goodix_ts_data *ts)
 {
-	devm_free_irq(&ts->client->dev, ts->client->irq, ts);
+	if (irq_allocated) {
+        	irq_allocated = 0;
+		devm_free_irq(&ts->client->dev, ts->client->irq, ts);
+	}
 }
 
 static int goodix_request_irq(struct goodix_ts_data *ts)
 {
+	if (irq_allocated) {
+        	return 0;
+    	}
+    	irq_allocated = 1;
 	return devm_request_threaded_irq(&ts->client->dev, ts->client->irq,
 					 NULL, goodix_ts_irq_handler,
 					 ts->irq_flags, ts->client->name, ts);
@@ -527,6 +554,8 @@ static int goodix_int_sync(struct goodix_ts_data *ts)
 static int goodix_reset(struct goodix_ts_data *ts)
 {
 	int error;
+
+	pr_notice("goodix_reset\n");
 
 	/* begin select I2C slave addr */
 	error = gpiod_direction_output(ts->gpiod_rst, 0);
@@ -832,6 +861,126 @@ err_release_cfg:
 	complete_all(&ts->firmware_loading_complete);
 }
 
+/*
+static ssize_t goodix_store_suspend_touch(struct device *dev,
+                 struct device_attribute *attr,
+                 const char *buf, size_t count)
+{
+    return count;
+}
+
+
+static ssize_t goodix_show_suspend_touch(struct device *dev,
+        struct device_attribute *attr,
+        char *buf)
+{
+    return strlen(buf);
+}
+
+static CLASS_ATTR(suspend_touch, S_IWUSR | S_IRUSR, goodix_show_suspend_touch, goodix_store_suspend_touch);
+*/
+
+
+static int goodix_ts_reinit(struct goodix_ts_data *ts)
+{
+    pr_notice("goodix_ts_reinit\n");
+
+    struct i2c_client *client;
+    int error;
+
+    client = ts->client;
+
+    reinit_completion(&ts->firmware_loading_complete);
+
+    if (ts->gpiod_int && ts->gpiod_rst) {
+        /* reset the controller */
+        error = goodix_reset(ts);
+        if (error) {
+            dev_err(&client->dev, "Controller reset failed.\n");
+            return error;
+        }
+    }
+
+    error = goodix_i2c_test(client);
+    if (error) {
+        dev_err(&client->dev, "I2C communication failure: %d\n", error);
+        return error;
+    }
+
+    if (ts->gpiod_int && ts->gpiod_rst) {
+
+        error = request_firmware_nowait(THIS_MODULE, true, ts->cfg_name,
+                        &client->dev, GFP_KERNEL, ts,
+                        goodix_config_cb);
+        if (error) {
+            dev_err(&client->dev,
+                "Failed to invoke firmware loader: %d\n",
+                error);
+            return error;
+        }
+    } else {
+        error = goodix_configure_dev(ts);
+        if (error)
+            return error;
+    }
+
+    return error;
+}
+
+
+static void goodix_work(struct work_struct *work)
+{
+    int error;
+    int state;
+    struct goodix_ts_data *ts;
+
+    ts = container_of(work, struct goodix_ts_data, work.work);
+
+    state = p05_aux_power_state();
+
+    if (state != last_power_state) {
+        pr_notice("Goodix - AUX power state changed: %d\n", state);
+
+        last_power_state = state;
+
+        if (state) {
+            /*
+             * Exit sleep mode by outputting HIGH level to INT pin
+             * for 2ms~5ms.
+             */
+            gpiod_direction_output(ts->gpiod_int, 1);
+
+            usleep_range(2000, 5000);
+
+            goodix_int_sync(ts);
+
+            inhibit_irq = 0;
+            re_init_err = goodix_ts_reinit(ts);
+        }
+        else {
+            re_init_err = 0;
+
+            if (ts->gpiod_int && ts->gpiod_rst)
+                wait_for_completion(&ts->firmware_loading_complete);
+
+            goodix_free_irq(ts);
+
+            input_unregister_device(ts->input_dev);
+
+            error = gpiod_direction_output(ts->gpiod_rst, 0);
+            if (error)
+                pr_err("Could not reset the Goodix during AUX3V3 power down");
+
+            msleep(1);
+        }
+    }
+    else if (re_init_err) {
+        re_init_err = goodix_ts_reinit(ts);
+    }
+
+    queue_delayed_work(goodix_workqueue, &ts->work, GOODIX_WORK_DELAY_S);
+}
+
 static void goodix_disable_regulators(void *arg)
 {
 	struct goodix_ts_data *ts = arg;
@@ -846,7 +995,9 @@ static int goodix_ts_probe(struct i2c_client *client,
 	struct goodix_ts_data *ts;
 	int error;
 
-	dev_dbg(&client->dev, "I2C Address: 0x%02x\n", client->addr);
+    	pr_notice("goodix_ts_probe. I2C Address: 0x%02x\n", client->addr);
+
+	/*dev_dbg(&client->dev, "I2C Address: 0x%02x\n", client->addr);*/
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		dev_err(&client->dev, "I2C check functionality failed.\n");
@@ -929,12 +1080,19 @@ static int goodix_ts_probe(struct i2c_client *client,
 			return error;
 		}
 
-		return 0;
 	} else {
 		error = goodix_configure_dev(ts);
 		if (error)
 			return error;
 	}
+
+	goodix_workqueue = create_singlethread_workqueue(GOODIX_WORKQUEUE_NAME);
+	INIT_DELAYED_WORK(&ts->work, goodix_work);
+
+	inhibit_irq = 0;
+    	last_power_state = p05_aux_power_state();
+
+    	queue_delayed_work(goodix_workqueue, &ts->work, GOODIX_WORK_DELAY_S);
 
 	return 0;
 }
@@ -942,6 +1100,14 @@ static int goodix_ts_probe(struct i2c_client *client,
 static int goodix_ts_remove(struct i2c_client *client)
 {
 	struct goodix_ts_data *ts = i2c_get_clientdata(client);
+
+    	pr_notice("goodix_ts_remove\n");
+
+	input_unregister_device(ts->input_dev);
+
+    	cancel_delayed_work(&ts->work);
+	//    flush_workqueue(goodix_workqueue);
+	//    destroy_workqueue(goodix_workqueue);
 
 	if (ts->gpiod_int && ts->gpiod_rst)
 		wait_for_completion(&ts->firmware_loading_complete);
@@ -956,40 +1122,34 @@ static int __maybe_unused goodix_suspend(struct device *dev)
 	int error;
 
 	/* We need gpio pins to suspend/resume */
-	if (!ts->gpiod_int || !ts->gpiod_rst) {
+	/*if (!ts->gpiod_int || !ts->gpiod_rst) {
 		disable_irq(client->irq);
 		return 0;
-	}
+	}*/
+	
+	pr_notice("goodix_suspend\n");
 
-	wait_for_completion(&ts->firmware_loading_complete);
+	cancel_delayed_work(&ts->work);
+	//    flush_workqueue(goodix_workqueue);
+
+    	if (ts->gpiod_int && ts->gpiod_rst){
+		wait_for_completion(&ts->firmware_loading_complete);
+	}
 
 	/* Free IRQ as IRQ pin is used as output in the suspend sequence */
 	goodix_free_irq(ts);
 
-	/* Output LOW on the INT pin for 5 ms */
-	error = gpiod_direction_output(ts->gpiod_int, 0);
-	if (error) {
-		goodix_request_irq(ts);
-		return error;
+    	input_unregister_device(ts->input_dev);
+
+    	error = gpiod_direction_output(ts->gpiod_rst, 0);
+    	if (error){
+        	return error;
 	}
+	
+	mslepp(1);
 
-	usleep_range(5000, 6000);
+	pr_notice("goodix_suspend Finished\n");
 
-	error = goodix_i2c_write_u8(ts->client, GOODIX_REG_COMMAND,
-				    GOODIX_CMD_SCREEN_OFF);
-	if (error) {
-		dev_err(&ts->client->dev, "Screen off command failed\n");
-		gpiod_direction_input(ts->gpiod_int);
-		goodix_request_irq(ts);
-		return -EAGAIN;
-	}
-
-	/*
-	 * The datasheet specifies that the interval between sending screen-off
-	 * command and wake-up should be longer than 58 ms. To avoid waking up
-	 * sooner, delay 58ms here.
-	 */
-	msleep(58);
 	return 0;
 }
 
@@ -999,28 +1159,17 @@ static int __maybe_unused goodix_resume(struct device *dev)
 	struct goodix_ts_data *ts = i2c_get_clientdata(client);
 	int error;
 
-	if (!ts->gpiod_int || !ts->gpiod_rst) {
-		enable_irq(client->irq);
-		return 0;
+	pr_notice("goodix_resume\n");
+
+	error = goodix_ts_reinit(ts);
+   	if (error){
+        	return error;
 	}
 
-	/*
-	 * Exit sleep mode by outputting HIGH level to INT pin
-	 * for 2ms~5ms.
-	 */
-	error = gpiod_direction_output(ts->gpiod_int, 1);
-	if (error)
-		return error;
+	last_power_state = p05_aux_power_state();
+	queue_delayed_work(goodix_workqueue, &ts->work, GOODIX_WORK_DELAY_S);
 
-	usleep_range(2000, 5000);
-
-	error = goodix_int_sync(ts);
-	if (error)
-		return error;
-
-	error = goodix_request_irq(ts);
-	if (error)
-		return error;
+	pr_notice("goodix_resume Finished\n");
 
 	return 0;
 }
@@ -1076,3 +1225,5 @@ MODULE_AUTHOR("Benjamin Tissoires <benjamin.tissoires@gmail.com>");
 MODULE_AUTHOR("Bastien Nocera <hadess@hadess.net>");
 MODULE_DESCRIPTION("Goodix touchscreen driver");
 MODULE_LICENSE("GPL v2");
+MODULE_VERSION("RSP-0.3");
+
