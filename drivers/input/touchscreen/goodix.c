@@ -883,10 +883,10 @@ static CLASS_ATTR(suspend_touch, S_IWUSR | S_IRUSR, goodix_show_suspend_touch, g
 
 static int goodix_ts_reinit(struct goodix_ts_data *ts)
 {
-    pr_notice("goodix_ts_reinit\n");
-
     struct i2c_client *client;
     int error;
+
+    pr_notice("goodix_ts_reinit\n");
 
     client = ts->client;
 
