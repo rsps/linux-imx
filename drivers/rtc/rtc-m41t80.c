@@ -443,6 +443,32 @@ static int m41t80_resume(struct device *dev)
 
 static SIMPLE_DEV_PM_OPS(m41t80_pm, m41t80_suspend, m41t80_resume);
 
+static ssize_t flags_show(struct device *dev,
+			  struct device_attribute *attr, char *buf)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+    struct m41t80_data *m41t80 = i2c_get_clientdata(client);
+	int val;
+
+	val = i2c_smbus_read_byte_data(client, M41T80_REG_FLAGS);
+	if (val < 0) {
+		return val;
+	}
+	// The WD flag is cleared in chip on read, we remember it
+
+	// here so it can be restored on subsequent reads.
+	if (val & 0x80) {
+	    m41t80->wd_triggered = 1;
+	}
+
+	if (m41t80->wd_triggered) {
+	    val |= 0x80;
+	}
+
+	return sprintf(buf, "%#x\n", val);
+}
+static DEVICE_ATTR_RO(flags);
+
 #ifdef CONFIG_COMMON_CLK
 #define sqw_to_m41t80_data(_hw) container_of(_hw, struct m41t80_data, sqw)
 
@@ -711,7 +737,7 @@ static ssize_t wdt_write(struct file *file, const char __user *buf,
 			 size_t count, loff_t *ppos)
 {
 	if (count) {
-		wdt_ping();
+		m41t80_wdt_ping();
 		return 1;
 	}
 	return 0;
@@ -754,7 +780,7 @@ static int wdt_ioctl(struct file *file, unsigned int cmd,
 	case WDIOC_GETBOOTSTATUS:
 		return put_user(boot_flag, (int __user *)arg);
 	case WDIOC_KEEPALIVE:
-		wdt_ping();
+		m41t80_wdt_ping();
 		return 0;
 	case WDIOC_SETTIMEOUT:
 		if (get_user(new_margin, (int __user *)arg))
@@ -931,7 +957,7 @@ static struct notifier_block wdt_notifier = {
 
 static struct attribute *attrs[] = {
     &dev_attr_flags.attr,
-    &dev_attr_sqwfreq.attr,
+/*&dev_attr_sqwfreq.attr,*/
 #ifdef CONFIG_RTC_DRV_M41T80_WDT
     &dev_attr_watchdog_timeout.attr,
     &dev_attr_boot_flags.attr,
