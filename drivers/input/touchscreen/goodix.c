@@ -1146,7 +1146,7 @@ static int __maybe_unused goodix_suspend(struct device *dev)
         	return error;
 	}
 	
-	mslepp(1);
+	msleep(1);
 
 	pr_notice("goodix_suspend Finished\n");
 
