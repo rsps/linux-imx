@@ -29,6 +29,10 @@
 #include <linux/reboot.h>
 #include <linux/watchdog.h>
 #endif
+#include <linux/delay.h>
+#include <linux/gpio.h>
+
+extern int p05_aux_power_state(void);
 
 #define M41T80_REG_SSEC		0x00
 #define M41T80_REG_SEC		0x01
@@ -70,7 +74,7 @@
 #define M41T80_FEATURE_SQ_ALT	BIT(4)	/* RSx bits are in reg 4 */
 
 static const struct i2c_device_id m41t80_id[] = {
-	{ "m41t62", M41T80_FEATURE_SQ | M41T80_FEATURE_SQ_ALT },
+	{ "m41t62", M41T80_FEATURE_SQ | M41T80_FEATURE_SQ_ALT | M41T80_FEATURE_HT | M41T80_FEATURE_WD },
 	{ "m41t65", M41T80_FEATURE_HT | M41T80_FEATURE_WD },
 	{ "m41t80", M41T80_FEATURE_SQ },
 	{ "m41t81", M41T80_FEATURE_HT | M41T80_FEATURE_SQ},
@@ -145,6 +149,7 @@ MODULE_DEVICE_TABLE(of, m41t80_of_match);
 
 struct m41t80_data {
 	unsigned long features;
+	u8 wd_triggered;
 	struct i2c_client *client;
 	struct rtc_device *rtc;
 #ifdef CONFIG_COMMON_CLK
@@ -200,6 +205,10 @@ static int m41t80_rtc_read_time(struct device *dev, struct rtc_time *tm)
 	unsigned char buf[8];
 	int err, flags;
 
+	if (!p05_aux_power_state()) {
+        	return -EAGAIN;
+	}
+
 	flags = i2c_smbus_read_byte_data(client, M41T80_REG_FLAGS);
 	if (flags < 0)
 		return flags;
@@ -234,6 +243,10 @@ static int m41t80_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	struct m41t80_data *clientdata = i2c_get_clientdata(client);
 	unsigned char buf[8];
 	int err, flags;
+
+	if (!p05_aux_power_state()) {
+		return -EAGAIN;
+	}
 
 	if (tm->tm_year < 100 || tm->tm_year > 199)
 		return -EINVAL;
@@ -605,7 +618,7 @@ static int boot_flag;
  *	Reload counter one with the watchdog timeout. We don't bother reloading
  *	the cascade counter.
  */
-static void wdt_ping(void)
+void m41t80_wdt_ping(void)
 {
 	unsigned char i2c_data[2];
 	struct i2c_msg msgs1[1] = {
@@ -620,30 +633,37 @@ static void wdt_ping(void)
 
 	i2c_data[0] = 0x09;		/* watchdog register */
 
-	if (wdt_margin > 31)
+	if (wdt_margin == 0) {
+        	i2c_data[1] = 0;
+	}
+	else if (wdt_margin > 31){
 		i2c_data[1] = (wdt_margin & 0xFC) | 0x83; /* resolution = 4s */
-	else
+	}
+	else{
 		/*
 		 * WDS = 1 (0x80), mulitplier = WD_TIMO, resolution = 1s (0x02)
 		 */
 		i2c_data[1] = wdt_margin << 2 | 0x82;
+	}
 
 	/*
 	 * M41T65 has three bits for watchdog resolution.  Don't set bit 7, as
 	 * that would be an invalid resolution.
 	 */
-	if (clientdata->features & M41T80_FEATURE_WD)
+	if (clientdata->features & M41T80_FEATURE_WD){
 		i2c_data[1] &= ~M41T80_WATCHDOG_RB2;
+		clientdata->wd_triggered = 0;
+	}
 
 	i2c_transfer(save_client->adapter, msgs1, 1);
 }
-
+EXPORT_SYMBOL(m41t80_wdt_ping);
 /**
  *	wdt_disable:
  *
  *	disables watchdog.
  */
-static void wdt_disable(void)
+void m41t80_wdt_disable(void)
 {
 	unsigned char i2c_data[2], i2c_buf[0x10];
 	struct i2c_msg msgs0[2] = {
@@ -676,7 +696,7 @@ static void wdt_disable(void)
 	i2c_data[1] = 0x00;
 	i2c_transfer(save_client->adapter, msgs1, 1);
 }
-
+EXPORT_SYMBOL(m41t80_wdt_disable);
 /**
  *	wdt_write:
  *	@file: file handle to the watchdog
@@ -743,7 +763,7 @@ static int wdt_ioctl(struct file *file, unsigned int cmd,
 		if (new_margin < 1 || new_margin > 124)
 			return -EINVAL;
 		wdt_margin = new_margin;
-		wdt_ping();
+		m41t80_wdt_ping();
 		/* Fall through */
 	case WDIOC_GETTIMEOUT:
 		return put_user(wdt_margin, (int __user *)arg);
@@ -754,12 +774,12 @@ static int wdt_ioctl(struct file *file, unsigned int cmd,
 
 		if (rv & WDIOS_DISABLECARD) {
 			pr_info("disable watchdog\n");
-			wdt_disable();
+			m41t80_wdt_disable();
 		}
 
 		if (rv & WDIOS_ENABLECARD) {
 			pr_info("enable watchdog\n");
-			wdt_ping();
+			m41t80_wdt_ping();
 		}
 
 		return -EINVAL;
@@ -817,6 +837,46 @@ static int wdt_release(struct inode *inode, struct file *file)
 }
 
 /**
+ * Show watchdog timeout
+ *
+ * @param dev
+ * @param attr
+ * @param buf
+ * @return size of result string in buf
+ */
+static ssize_t m41t80_show_watchdog_timeout(struct device *dev,
+              struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf, "%u\n", wdt_margin);
+}
+
+static ssize_t m41t80_store_watchdog_timeout(struct device *dev,
+              struct device_attribute *attr,
+              const char *buf, size_t count)
+{
+    int timeout;
+
+    if (sscanf(buf, "%d", &timeout) != 1) {
+        dev_err(dev, "m41t80_store_watchdog_timeout invalid param (%s)\n", buf);
+        return -EINVAL;
+    }
+
+    wdt_margin = timeout;
+    m41t80_wdt_ping();
+
+    return count;
+}
+static DEVICE_ATTR(watchdog_timeout, S_IWUSR | S_IRUSR, m41t80_show_watchdog_timeout, m41t80_store_watchdog_timeout);
+
+static ssize_t m41t80_show_boot_flags(struct device *dev,
+              struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf, "%u\n", boot_flag);
+}
+static DEVICE_ATTR(boot_flags, S_IRUSR, m41t80_show_boot_flags, NULL);
+
+
+/**
  *	notify_sys:
  *	@this: our notifier block
  *	@code: the event being reported
@@ -832,7 +892,7 @@ static int wdt_notify_sys(struct notifier_block *this, unsigned long code,
 {
 	if (code == SYS_DOWN || code == SYS_HALT)
 		/* Disable Watchdog */
-		wdt_disable();
+		m41t80_wdt_disable();
 	return NOTIFY_DONE;
 }
 
@@ -869,6 +929,20 @@ static struct notifier_block wdt_notifier = {
  *****************************************************************************
  */
 
+static struct attribute *attrs[] = {
+    &dev_attr_flags.attr,
+    &dev_attr_sqwfreq.attr,
+#ifdef CONFIG_RTC_DRV_M41T80_WDT
+    &dev_attr_watchdog_timeout.attr,
+    &dev_attr_boot_flags.attr,
+#endif
+    NULL,
+};
+
+static struct attribute_group attr_group = {
+    .attrs = attrs,
+};
+
 static int m41t80_probe(struct i2c_client *client,
 			const struct i2c_device_id *id)
 {
@@ -877,6 +951,24 @@ static int m41t80_probe(struct i2c_client *client,
 	struct rtc_time tm;
 	struct m41t80_data *m41t80_data = NULL;
 	bool wakeup_source = false;
+
+	pr_notice("m41t80_probe\n");
+
+	// P05_platform driver loads in same priority as RTC, so to make sure
+	// power is ready for RTC, we force it on here.
+	gpio_request(1, "aux_pwr");
+	gpio_direction_output(1, 1);
+	gpio_free(1);
+
+	gpio_request(1, "display_power");
+	gpio_direction_output(1, 1);
+	gpio_free(1);
+
+	gpio_request(1, "power5v");
+	gpio_direction_output(1, 1);
+	gpio_free(1);
+
+	msleep(50);
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_I2C_BLOCK |
 				     I2C_FUNC_SMBUS_BYTE_DATA)) {
@@ -972,6 +1064,13 @@ static int m41t80_probe(struct i2c_client *client,
 			return rc;
 		}
 	}
+	rc = i2c_smbus_read_byte_data(client, M41T80_REG_FLAGS);
+        if (rc < 0) {
+            return rc;
+        }
+        boot_flag = rc;
+        wdt_margin = 0;
+        m41t80_wdt_ping();
 #endif
 #ifdef CONFIG_COMMON_CLK
 	if (m41t80_data->features & M41T80_FEATURE_SQ)
@@ -989,6 +1088,8 @@ static int m41t80_remove(struct i2c_client *client)
 {
 #ifdef CONFIG_RTC_DRV_M41T80_WDT
 	struct m41t80_data *clientdata = i2c_get_clientdata(client);
+
+	pr_notice("m41t80_remove\n");
 
 	if (clientdata->features & M41T80_FEATURE_HT) {
 		misc_deregister(&wdt_dev);
@@ -1015,3 +1116,4 @@ module_i2c_driver(m41t80_driver);
 MODULE_AUTHOR("Alexander Bigga <ab@mycable.de>");
 MODULE_DESCRIPTION("ST Microelectronics M41T80 series RTC I2C Client Driver");
 MODULE_LICENSE("GPL");
+MODULE_VERSION("RSP-0.1");
