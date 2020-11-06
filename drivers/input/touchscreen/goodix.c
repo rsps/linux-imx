@@ -721,7 +721,7 @@ static int goodix_read_version(struct goodix_ts_data *ts)
 static int goodix_i2c_test(struct i2c_client *client)
 {
 	int retry = 0;
-	int error;
+	int error = 0;
 	u8 test;
 
 	while (retry++ < 2) {
