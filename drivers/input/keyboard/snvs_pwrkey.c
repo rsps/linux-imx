@@ -27,8 +27,12 @@
 #define SNVS_LPSR_SPO	BIT(18)
 #define SNVS_LPCR_DEP_EN BIT(5)
 
-#define DEBOUNCE_TIME 30
+#define DEBOUNCE_TIME 500
 #define REPEAT_INTERVAL 60
+
+#define ALTERNATE_KEYCODE KEY_PROG1
+
+static int use_alternate_keycode = 0;
 
 struct pwrkey_drv_data {
 	struct regmap *snvs;
@@ -47,6 +51,8 @@ static void imx_imx_snvs_check_for_events(struct timer_list *t)
 	struct pwrkey_drv_data *pdata = from_timer(pdata, t, check_timer);
 	struct input_dev *input = pdata->input;
 	u32 state;
+
+	int keycode = (use_alternate_keycode != 0) ? ALTERNATE_KEYCODE : pdata->keycode;
 
 	if (pdata->clk) {
 		if (pdata->suspended)
@@ -69,7 +75,7 @@ static void imx_imx_snvs_check_for_events(struct timer_list *t)
 	/* only report new event if status changed */
 	if (state ^ pdata->keystate) {
 		pdata->keystate = state;
-		input_event(input, EV_KEY, pdata->keycode, state);
+		input_event(input, EV_KEY, keycode, state);
 		input_sync(input);
 		pm_relax(pdata->input->dev.parent);
 	}
@@ -87,12 +93,14 @@ static void imx_imx_snvs_check_for_release_events(struct timer_list *t)
 	struct input_dev *input = pdata->input;
 	u32 state;
 
+	int keycode = (use_alternate_keycode != 0) ? ALTERNATE_KEYCODE : pdata->keycode;
+
 	/* interrupt only reports release of key so do not wait for state change */
 	state=1;
-	input_event(input, EV_KEY, pdata->keycode, state);
+	input_event(input, EV_KEY, keycode, state);
 	input_sync(input);
 	state=0;
-	input_event(input, EV_KEY, pdata->keycode, state);
+	input_event(input, EV_KEY, keycode, state);
 	input_sync(input);
 }
 
@@ -134,12 +142,40 @@ static void imx_snvs_pwrkey_act(void *pdata)
 	del_timer_sync(&pd->check_timer);
 }
 
+static ssize_t use_alternate_keycode_store(struct device *dev,
+                 struct device_attribute *attr,
+                 const char *buf, size_t count)
+{
+    u32 value;
+
+    if (sscanf(buf, "%u", &value) != 1) {
+        dev_err(dev, "use_alternate_keycode_store invalid param %s\n", buf);
+        return -EINVAL;
+    }
+
+    use_alternate_keycode = (int)(value != 0);
+
+    pr_info("use_alternate_keycode_store %d\n", use_alternate_keycode);
+
+    return count;
+}
+
+static ssize_t use_alternate_keycode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    pr_notice("use_alternate_keycode_show\n");
+
+    return sprintf(buf, "%d\n", use_alternate_keycode);
+}
+static DEVICE_ATTR_RW(use_alternate_keycode);
+
 static int imx_snvs_pwrkey_probe(struct platform_device *pdev)
 {
 	struct pwrkey_drv_data *pdata = NULL;
 	struct input_dev *input = NULL;
 	struct device_node *np;
 	int error;
+
+	pr_notice("imx_snvs_pwrkey_probe\n");
 
 	/* Get SNVS register Page */
 	np = pdev->dev.of_node;
@@ -201,13 +237,16 @@ static int imx_snvs_pwrkey_probe(struct platform_device *pdev)
 	input->id.bustype = BUS_HOST;
 
 	input_set_capability(input, EV_KEY, pdata->keycode);
-
+	input_set_capability(input, EV_KEY, ALTERNATE_KEYCODE);
+	
 	/* input customer action to cancel release timer */
 	error = devm_add_action(&pdev->dev, imx_snvs_pwrkey_act, pdata);
 	if (error) {
 		dev_err(&pdev->dev, "failed to register remove action\n");
 		goto error_probe;
 	}
+
+	sysfs_create_file(&input->dev.kobj, &dev_attr_use_alternate_keycode.attr);
 
 	pdata->input = input;
 	platform_set_drvdata(pdev, pdata);
@@ -246,6 +285,8 @@ static int __maybe_unused imx_snvs_pwrkey_suspend(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct pwrkey_drv_data *pdata = platform_get_drvdata(pdev);
 
+	pr_notice("imx_snvs_pwrkey_suspend\n");
+
 	if (pdata->clk)
 		clk_disable_unprepare(pdata->clk);
 
@@ -258,6 +299,8 @@ static int __maybe_unused imx_snvs_pwrkey_resume(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct pwrkey_drv_data *pdata = platform_get_drvdata(pdev);
+
+	pr_notice("imx_snvs_pwrkey_resume\n");
 
 	if (pdata->clk)
 		clk_prepare_enable(pdata->clk);
@@ -289,3 +332,4 @@ module_platform_driver(imx_snvs_pwrkey_driver);
 MODULE_AUTHOR("Freescale Semiconductor");
 MODULE_DESCRIPTION("i.MX snvs power key Driver");
 MODULE_LICENSE("GPL");
+MODULE_VERSION("RSP-0.2");

@@ -109,6 +109,8 @@ static int si7020_probe(struct i2c_client *client,
 	struct i2c_client **data;
 	int ret;
 
+	pr_notice("si7020_probe\n");
+
 	if (!i2c_check_functionality(client->adapter,
 				     I2C_FUNC_SMBUS_WRITE_BYTE |
 				     I2C_FUNC_SMBUS_READ_WORD_DATA))
@@ -164,3 +166,4 @@ module_i2c_driver(si7020_driver);
 MODULE_DESCRIPTION("Silicon Labs Si7013/20/21 Relative Humidity and Temperature Sensors");
 MODULE_AUTHOR("David Barksdale <dbarksdale@uplogix.com>");
 MODULE_LICENSE("GPL");
+MODULE_VERSION("RSP-0.2");
