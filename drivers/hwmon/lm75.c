@@ -18,6 +18,7 @@
 #include <linux/regmap.h>
 #include <linux/util_macros.h>
 #include "lm75.h"
+#include <linux/gpio.h>
 
 /*
  * This driver handles the LM75 and compatible digital temperature sensors.
@@ -551,6 +552,8 @@ lm75_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	int status, err;
 	enum lm75_type kind;
 
+	pr_notice("lm75_probe\n");
+
 	if (client->dev.of_node)
 		kind = (enum lm75_type)of_device_get_match_data(&client->dev);
 	else
@@ -849,6 +852,9 @@ static int lm75_suspend(struct device *dev)
 {
 	int status;
 	struct i2c_client *client = to_i2c_client(dev);
+	
+	pr_notice("lm75_suspend\n");
+
 	status = i2c_smbus_read_byte_data(client, LM75_REG_CONF);
 	if (status < 0) {
 		dev_dbg(&client->dev, "Can't read config? %d\n", status);
@@ -863,6 +869,9 @@ static int lm75_resume(struct device *dev)
 {
 	int status;
 	struct i2c_client *client = to_i2c_client(dev);
+	
+	pr_notice("lm75_resume\n");
+
 	status = i2c_smbus_read_byte_data(client, LM75_REG_CONF);
 	if (status < 0) {
 		dev_dbg(&client->dev, "Can't read config? %d\n", status);
@@ -900,3 +909,4 @@ module_i2c_driver(lm75_driver);
 MODULE_AUTHOR("Frodo Looijaard <frodol@dds.nl>");
 MODULE_DESCRIPTION("LM75 driver");
 MODULE_LICENSE("GPL");
+MODULE_VERSION("RSP-0.1");

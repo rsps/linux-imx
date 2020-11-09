@@ -41,6 +41,7 @@ struct snvs_rtc_data {
 	struct clk *clk;
 };
 
+static int alarm_registered = 0;
 /* Read 64 bit timer register, which could be in inconsistent state */
 static u64 rtc_read_lpsrt(struct snvs_rtc_data *data)
 {
@@ -247,6 +248,8 @@ static irqreturn_t snvs_rtc_irq_handler(int irq, void *dev_id)
 		snvs_rtc_alarm_irq_enable(dev, 0);
 
 		rtc_update_irq(data->rtc, 1, events);
+
+	    	alarm_registered = 1;
 	}
 
 	/* clear interrupt status */
@@ -257,6 +260,17 @@ static irqreturn_t snvs_rtc_irq_handler(int irq, void *dev_id)
 
 	return events ? IRQ_HANDLED : IRQ_NONE;
 }
+
+static ssize_t
+resumed_from_alarm_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+//    struct snvs_rtc_data *data = dev_get_drvdata(dev);
+
+    pr_notice("resumed_from_alarm_show\n");
+
+    return sprintf(buf, "%d\n", alarm_registered);
+}
+static DEVICE_ATTR_RO(resumed_from_alarm);
 
 static const struct regmap_config snvs_rtc_config = {
 	.reg_bits = 32,
@@ -269,6 +283,8 @@ static int snvs_rtc_probe(struct platform_device *pdev)
 	struct snvs_rtc_data *data;
 	int ret;
 	void __iomem *mmio;
+
+    pr_notice("snvs_rtc_probe\n");
 
 	data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
 	if (!data)
@@ -350,6 +366,8 @@ static int snvs_rtc_probe(struct platform_device *pdev)
 		goto error_rtc_device_register;
 	}
 
+	sysfs_create_file(&data->rtc->dev.kobj, &dev_attr_resumed_from_alarm.attr);
+
 	return 0;
 
 error_rtc_device_register:
@@ -363,6 +381,10 @@ static int __maybe_unused snvs_rtc_suspend_noirq(struct device *dev)
 {
 	struct snvs_rtc_data *data = dev_get_drvdata(dev);
 
+	pr_notice("snvs_rtc_suspend_noirq\n");
+
+	alarm_registered = 0;
+
 	if (data->clk)
 		clk_disable_unprepare(data->clk);
 
@@ -372,6 +394,10 @@ static int __maybe_unused snvs_rtc_suspend_noirq(struct device *dev)
 static int __maybe_unused snvs_rtc_resume_noirq(struct device *dev)
 {
 	struct snvs_rtc_data *data = dev_get_drvdata(dev);
+
+	struct rtc_wkalrm alrm;
+
+	pr_info("snvs-rtc resumed from alarm: %d\n", alarm_registered);
 
 	if (data->clk)
 		return clk_prepare_enable(data->clk);
@@ -402,3 +428,4 @@ module_platform_driver(snvs_rtc_driver);
 MODULE_AUTHOR("Freescale Semiconductor, Inc.");
 MODULE_DESCRIPTION("Freescale SNVS RTC Driver");
 MODULE_LICENSE("GPL");
+MODULE_VERSION("RSP-0.1");
