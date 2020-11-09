@@ -909,4 +909,4 @@ module_i2c_driver(lm75_driver);
 MODULE_AUTHOR("Frodo Looijaard <frodol@dds.nl>");
 MODULE_DESCRIPTION("LM75 driver");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("RSP-0.1");
+MODULE_VERSION("RSP-0.2");

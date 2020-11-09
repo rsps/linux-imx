@@ -428,4 +428,4 @@ module_platform_driver(snvs_rtc_driver);
 MODULE_AUTHOR("Freescale Semiconductor, Inc.");
 MODULE_DESCRIPTION("Freescale SNVS RTC Driver");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("RSP-0.1");
+MODULE_VERSION("RSP-0.2");
