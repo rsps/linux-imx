@@ -1142,4 +1142,4 @@ module_i2c_driver(m41t80_driver);
 MODULE_AUTHOR("Alexander Bigga <ab@mycable.de>");
 MODULE_DESCRIPTION("ST Microelectronics M41T80 series RTC I2C Client Driver");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("RSP-0.1");
+MODULE_VERSION("RSP-0.2");
