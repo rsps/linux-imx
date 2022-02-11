@@ -85,9 +85,9 @@
 #define BRCMF_SCAN_UNASSOC_TIME		40
 #define BRCMF_SCAN_PASSIVE_TIME		120
 
-#define BRCMF_ND_INFO_TIMEOUT		msecs_to_jiffies(2000)
-
 #define BRCMF_PS_MAX_TIMEOUT_MS		2000
+
+#define BRCMF_ND_INFO_TIMEOUT		msecs_to_jiffies(2000)
 
 /* Dump obss definitions */
 #define ACS_MSRMNT_DELAY		100
