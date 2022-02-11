@@ -1,4 +1,6 @@
 /*
+ * Copyright (C) 2016 Freescale Semiconductor, Inc.
+ * Copyright 2017 NXP
  * Copyright 2019 Variscite Ltd.
  *
  * This program is free software; you can redistribute it and/or
@@ -14,10 +16,20 @@
 
 /dts-v1/;
 
-#include "imx8qm.dtsi"
+#include "imx8qp.dtsi"
 #include "imx8qm-var-spear-common.dtsi"
-#include "imx8qm-var-spear-hdmi.dtsi"
 
-/ {
-	model = "Variscite SPEAR-MX8 i.MX8QM HDMI";
+&thermal_zones {
+	pmic-thermal0 {
+		cooling-maps {
+			map0 {
+				cooling-device =
+				<&A53_0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+				<&A53_1 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+				<&A53_2 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+				<&A53_3 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+				<&A72_0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+			};
+		};
+	};
 };

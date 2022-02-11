@@ -88,6 +88,7 @@ static const struct i2c_device_id pca953x_id[] = {
 	{ "pca9575", 16 | PCA957X_TYPE | PCA_INT, },
 	{ "pca9698", 40 | PCA953X_TYPE, },
 
+	{ "pcal6408", 8 | PCA953X_TYPE | PCA_LATCH_INT, },
 	{ "pcal6416", 16 | PCA953X_TYPE | PCA_LATCH_INT, },
 	{ "pcal6524", 24 | PCA953X_TYPE | PCA_LATCH_INT, },
 	{ "pcal9555a", 16 | PCA953X_TYPE | PCA_LATCH_INT, },
@@ -988,6 +989,7 @@ static int pca953x_probe(struct i2c_client *client,
 	u32 invert = 0;
 	struct regulator *reg;
 	const struct regmap_config *regmap_config;
+	u8 int_mask[MAX_BANK];
 
 	chip = devm_kzalloc(&client->dev,
 			sizeof(struct pca953x_chip), GFP_KERNEL);
@@ -1115,6 +1117,18 @@ static int pca953x_probe(struct i2c_client *client,
 	ret = devm_gpiochip_add_data(&client->dev, &chip->gpio_chip, chip);
 	if (ret)
 		goto err_exit;
+
+	/* If device tree property standard-regs-fallback exists, read register PCAL953X_INT_MASK
+	to detect if extended registers are supported. If not, clear PCA_PCAL bit. */
+	if (of_property_read_bool(client->dev.of_node, "standard-regs-fallback")) {
+		ret = pca953x_read_regs(chip, PCAL953X_INT_MASK, int_mask);
+		if (ret) {
+			dev_info(&client->dev, "Extended registers not supported, fallback to standard registers\n");
+			chip->driver_data &= ~(PCA_PCAL);
+		} else {
+			dev_info(&client->dev, "Extended registers supported\n");
+		}
+	}
 
 	ret = pca953x_irq_setup(chip, irq_base);
 	if (ret)
@@ -1277,6 +1291,7 @@ static const struct of_device_id pca953x_dt_ids[] = {
 	{ .compatible = "nxp,pca9575", .data = OF_957X(16, PCA_INT), },
 	{ .compatible = "nxp,pca9698", .data = OF_953X(40, 0), },
 
+	{ .compatible = "nxp,pcal6408", .data = OF_953X(8, PCA_LATCH_INT), },
 	{ .compatible = "nxp,pcal6416", .data = OF_953X(16, PCA_LATCH_INT), },
 	{ .compatible = "nxp,pcal6524", .data = OF_953X(24, PCA_LATCH_INT), },
 	{ .compatible = "nxp,pcal9555a", .data = OF_953X(16, PCA_LATCH_INT), },
@@ -1309,7 +1324,9 @@ static SIMPLE_DEV_PM_OPS(pca953x_pm_ops, pca953x_suspend, pca953x_resume);
 static struct i2c_driver pca953x_driver = {
 	.driver = {
 		.name	= "pca953x",
+#if 0
 		.pm	= &pca953x_pm_ops,
+#endif
 		.of_match_table = pca953x_dt_ids,
 		.acpi_match_table = ACPI_PTR(pca953x_acpi_ids),
 	},
