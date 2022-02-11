@@ -11,4 +11,7 @@ struct brcmf_pciedev {
 	struct brcmf_pciedev_info *devinfo;
 };
 
+void brcmf_pcie_exit(void);
+void brcmf_pcie_register(void);
+
 #endif /* BRCMFMAC_PCIE_H */
