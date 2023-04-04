@@ -372,6 +372,7 @@
 	fsl,magic-packet;
 	phy-reset-gpios = <&lsio_gpio2 28 GPIO_ACTIVE_LOW>;
 	phy-reset-duration = <10>;
+	phy-reset-post-delay = <20>;
 	phy-mode = "rgmii";
 	phy-handle = <&ethphy0>;
 	status = "okay";
@@ -392,6 +393,7 @@
 			reg = <5>;
 			at803x,eee-disabled;
 			at803x,vddio-1p8v;
+			adi,phy-mode-override = "rgmii";
 		};
 	};
 };
@@ -405,6 +407,7 @@
 	phy-supply = <&reg_ethphy1>;
 	phy-reset-gpios = <&pca9534 5 GPIO_ACTIVE_LOW>;
 	phy-reset-duration = <10>;
+	phy-reset-post-delay = <20>;
 	status = "okay";
 };
 
