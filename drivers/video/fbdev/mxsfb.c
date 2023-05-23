@@ -562,24 +562,29 @@ static irqreturn_t mxsfb_irq_handler(int irq, void *dev_id)
 	u32 ctrl1, enable, status, acked_status;
 
 	ctrl1 = readl(host->base + LCDC_CTRL1);
+
+	status = CTRL1_IRQ_STATUS_MASK;
+	status |= ctrl1 & CTRL1_CUR_FRAME_DONE_IRQ_EN;
+	status |= ctrl1 & CTRL1_VSYNC_EDGE_IRQ_EN;
+	writel(status, host->base + LCDC_CTRL1 + REG_CLR);
+
 	enable = (ctrl1 & CTRL1_IRQ_ENABLE_MASK) >> CTRL1_IRQ_ENABLE_SHIFT;
 	status = (ctrl1 & CTRL1_IRQ_STATUS_MASK) >> CTRL1_IRQ_STATUS_SHIFT;
 	acked_status = (enable & status) << CTRL1_IRQ_STATUS_SHIFT;
 
 	if ((acked_status & CTRL1_VSYNC_EDGE_IRQ) && host->wait4vsync) {
-		writel(CTRL1_VSYNC_EDGE_IRQ,
-				host->base + LCDC_CTRL1 + REG_CLR);
-		writel(CTRL1_VSYNC_EDGE_IRQ_EN,
-			     host->base + LCDC_CTRL1 + REG_CLR);
+//		writel(CTRL1_VSYNC_EDGE_IRQ,
+//				host->base + LCDC_CTRL1 + REG_CLR);
+//		writel(CTRL1_VSYNC_EDGE_IRQ_EN,
+//			     host->base + LCDC_CTRL1 + REG_CLR);
 		host->wait4vsync = 0;
 		complete(&host->vsync_complete);
 	}
 
 	if (acked_status & CTRL1_CUR_FRAME_DONE_IRQ) {
-		writel(CTRL1_CUR_FRAME_DONE_IRQ,
-				host->base + LCDC_CTRL1 + REG_CLR);
-		writel(CTRL1_CUR_FRAME_DONE_IRQ_EN,
-			     host->base + LCDC_CTRL1 + REG_CLR);
+//		writel(CTRL1_CUR_FRAME_DONE_IRQ,
+//				host->base + LCDC_CTRL1 + REG_CLR);
+//		writel(CTRL1_CUR_FRAME_DONE_IRQ_EN, host->base + LCDC_CTRL1 + REG_CLR);
 		complete(&host->flip_complete);
 	}
 
@@ -1035,10 +1040,9 @@ static int mxsfb_wait_for_vsync(struct fb_info *fb_info)
 	init_completion(&host->vsync_complete);
 
 	host->wait4vsync = 1;
-	writel(CTRL1_VSYNC_EDGE_IRQ_EN,
-		host->base + LCDC_CTRL1 + REG_SET);
-	ret = wait_for_completion_interruptible_timeout(
-				&host->vsync_complete, 1 * HZ);
+	writel(CTRL1_VSYNC_EDGE_IRQ, host->base + LCDC_CTRL1 + REG_CLR);
+	writel(CTRL1_VSYNC_EDGE_IRQ_EN, host->base + LCDC_CTRL1 + REG_SET);
+	ret = wait_for_completion_interruptible_timeout(&host->vsync_complete, msecs_to_jiffies(1000));
 	if (ret == 0) {
 		dev_err(fb_info->device,
 			"mxs wait for vsync timeout\n");
@@ -1056,7 +1060,8 @@ static int mxsfb_ioctl(struct fb_info *fb_info, unsigned int cmd,
 	int ret = -EINVAL;
 
 	switch (cmd) {
-	case MXCFB_WAIT_FOR_VSYNC:
+	case FBIO_WAITFORVSYNC:
+//	case MXCFB_WAIT_FOR_VSYNC:
 		ret = mxsfb_wait_for_vsync(fb_info);
 		break;
 	default:
@@ -1113,7 +1118,7 @@ static int mxsfb_blank(int blank, struct fb_info *fb_info)
 static int mxsfb_pan_display(struct fb_var_screeninfo *var,
 		struct fb_info *fb_info)
 {
-	int ret = 0;
+	long ret = 0;
 	struct mxsfb_info *host = fb_info->par;
 	unsigned offset;
 
@@ -1133,23 +1138,22 @@ static int mxsfb_pan_display(struct fb_var_screeninfo *var,
 		return -EINVAL;
 	}
 
-	init_completion(&host->flip_complete);
+//	init_completion(&host->flip_complete);
 
 	offset = fb_info->fix.line_length * var->yoffset;
+	writel(fb_info->fix.smem_start + offset, host->base + host->devdata->next_buf);
 
 	/* update on next VSYNC */
-	writel(fb_info->fix.smem_start + offset,
-			host->base + host->devdata->next_buf);
-
-	writel(CTRL1_CUR_FRAME_DONE_IRQ_EN,
-		host->base + LCDC_CTRL1 + REG_SET);
-
-	ret = wait_for_completion_timeout(&host->flip_complete, HZ / 2);
-	if (!ret) {
-		dev_err(fb_info->device,
-			"mxs wait for pan flip timeout\n");
-		return -ETIMEDOUT;
-	}
+//	reinit_completion(&host->flip_complete);
+//	writel(fb_info->fix.smem_start + offset, host->base + host->devdata->next_buf);
+//	writel(CTRL1_CUR_FRAME_DONE_IRQ, host->base + LCDC_CTRL1 + REG_CLR);
+//	writel(CTRL1_CUR_FRAME_DONE_IRQ_EN, host->base + LCDC_CTRL1 + REG_SET);
+//	ret = wait_for_completion_interruptible_timeout(&host->flip_complete, msecs_to_jiffies(500));
+//	if (ret < 1) {
+//		dev_err(fb_info->device,
+//			"mxs wait for pan flip timeout\n");
+//		return -ETIMEDOUT;
+//	}
 
 	return 0;
 }
@@ -2243,6 +2247,8 @@ static int mxsfb_probe(struct platform_device *pdev)
 	}
 	host->fb_info = fb_info;
 	fb_info->par = host;
+
+	init_completion(&host->flip_complete);
 
 	ret = devm_request_irq(&pdev->dev, irq, mxsfb_irq_handler, 0,
 			  dev_name(&pdev->dev), host);
