@@ -266,6 +266,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx8mp-var-dart-wbe-dt8mcustomboard-basler-isp0.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-var-dart-wbe-dt8mcustomboard-m7.dtb
 
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-var-smarc-echo.dtb
+dtb-$(CONFIG_ARCH_MXC) += imx8mp-var-smarc-echo-basler-isp0.dtb
 
 imx8mp-var-smarc-wbe-echo-dtbs := imx8mp-var-smarc-echo.dtb imx8mp-var-smarc-wbe.dtbo
 
